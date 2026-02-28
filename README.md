@@ -1,4 +1,4 @@
-# Local Real-Time Computer Vision Pipeline
+# LiveLabel: a Local Real-Time Computer Vision Pipeline
 A comprehensive real-time computer vision system with two main approaches: object detection with YOLO/SAM and motion-based scene analysis, both powered by local VLMs via Ollama.
 
 ## Features
