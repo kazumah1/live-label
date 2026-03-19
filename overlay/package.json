@@ -1,0 +1,12 @@
+{
+  "name": "livelabel-overlay",
+  "version": "1.0.0",
+  "description": "LiveLabel floating overlay — invisible to screen recording",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^29.0.0"
+  }
+}

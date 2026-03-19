@@ -1,161 +1,146 @@
-# Local Real-Time Computer Vision Pipeline
-A comprehensive real-time computer vision system with two main approaches: object detection with YOLO/SAM and motion-based scene analysis, both powered by local VLMs via Ollama.
+# LiveLabel
 
-## Features
-- **Object Detection Mode**: YOLO/SAM-based detection with bounding boxes and per-object labeling
-- **Motion Analysis Mode**: Intelligent motion detection with full-scene VLM analysis
-- Face/person censoring (object detection mode)
-- Webcam and screen capture streaming
-- Compatibility with any Ollama VLM that supports images
-- Fully local setup (optionally use remote models)
-- Asynchronous processing for smooth real-time performance
-- Advanced motion detection with multiple algorithms
+Most computer vision demos either run in the cloud — introducing latency and privacy concerns — or require writing custom integration code to wire up a specific model. LiveLabel was built to answer a simpler question: *what is the camera looking at, right now, with no internet required?*
 
-## Two Operating Modes
+It is a real-time computer vision web app that streams an annotated camera feed to a browser dashboard, using any local vision-language model (VLM) served via Ollama. No cloud dependency. No API keys. Runs on a laptop.
 
-### 1. Object Detection Mode (`object_detector.py`)
-**Best for**: Precise object identification, multi-object scenes, object tracking
+---
 
-**How it Works:**
-- **Detection:** YOLO/SAM infers every `--frame-delay` frames and filters by `--confidence`
-- **Storing:** Object is given a UID stored in `prev_box_ids`, and bounding boxes are stored in `prev_boxes`
-- **Tracking heuristic:** Centers + IoU matching update `prev_boxes` and stable UIDs
-- **Labeling:** Async queue crops frame per stored box -> base64 -> POST to Ollama `--server` with `--vlm` to generate text label
-- **Censoring:** Pixelates class person when `--censor` is True, skips labeling and boundary box drawing
+## How it works
 
-### 2. Motion Analysis Mode (`analyzer.py`)
-**Best for**: Scene understanding, activity recognition, real-time responsiveness
+Two modes are available and switchable at runtime from the dashboard sidebar:
 
-**How it Works:**
-- **Triple Motion Detection:**
-  - **Background Subtraction (MOG2/KNN)**: Detects new objects appearing in frame
-  - **Frame Difference**: Detects immediate movements and gestures
-  - **Structural Similarity**: Detects overall scene changes and camera movement
-- **Smart Triggering**: Only analyzes when significant motion is detected
-- **Full Scene Analysis**: VLM analyzes entire frame for comprehensive scene understanding
-- **Asynchronous Processing**: Motion detection runs in real-time while VLM analysis happens in background
-## Next Steps
-- SAM integration for better object segmentation
+**Detector mode** — Uses FastSAM or YOLO to detect and segment objects in every frame. Each detected object is assigned a persistent UID and individually labeled by the VLM (crop-and-ask). Labels are generated asynchronously so the video stream stays smooth.
+
+**Analyzer mode** — Monitors for motion using a combination of background subtraction, frame differencing, and structural similarity. When significant motion is detected, the full frame is sent to the VLM for a scene-level description.
+
+The dashboard includes: live MJPEG stream, mode toggle (Detector/Analyzer), source toggle (Camera/Screen), detection controls (boxes, labels, overlays, confidence threshold), model selector, live scene summary, and per-object list.
+
+---
 
 ## Prerequisites
-1. Python 3.10+ (project currently uses a venv in `venv/`)
-2. Ollama installed with a VLM pulled (e.g., `llava:7b`)
-3. Model weights available locally (default: `yolo11n.pt` in repo root)
-4. Screen and camera permissions if using those sources
 
-## Getting Started
-1. Create and activate a virtual environment
+- Python 3.10+
+- [Ollama](https://ollama.com) running locally with a vision model pulled
+- Model weights in a `models/` directory (default: `FastSAM-s.pt`)
+- macOS camera and screen recording permissions
+
+Recommended VLMs:
+
 ```
-python -m venv venv
-source venv/bin/activate
+ollama pull qwen2.5vl:7b    # best quality
+ollama pull moondream:latest # much faster (~2-5s vs 15-30s per analysis)
 ```
-2. Install dependencies
+
+---
+
+## Quick start
+
 ```
+git clone <repo>
+cd cv
+python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
-3. Start your Ollama server (default API at `http://localhost:11434`)
+
+Place your detection weights in `models/` (e.g., `models/FastSAM-s.pt`).
+
+Make sure Ollama is running:
+
 ```
 ollama serve
 ```
-4. Choose your mode and run:
 
-**Object Detection Mode:**
-```
-python object_detector.py [args]
-```
+Start the web app:
 
-**Motion Analysis Mode:**
 ```
-python analyzer.py [args]
+python web_server.py
 ```
 
-## Arguments
+Open http://localhost:5000. Select a mode from the sidebar and use the controls to adjust detection behavior.
 
-### Object Detection Mode (`object_detector.py`)
-- `--vlm` (str): VLM model name. Default: `llava:7b`.
-- `--detection-model` (str): Path to YOLO `.pt` weights. Default: `yolo11n.pt`.
-- `--server` (str): VLM server URL. Default: `http://localhost:11434`.
-- `--confidence` (float): Confidence threshold for object detection filtering. Default: `0.3`.
-- `--frame-delay` (int): Frame interval between detection passes. Default: `5`.
-- `--censor` (bool): Enable face/person pixelation. Default: `False`.
-- `--source` (int): Video source: `0` = webcam, `1` = screen capture. Default: `0`.
+---
 
-### Motion Analysis Mode (`analyzer.py`)
-- `--vlm` (str): VLM model name. Default: `qwen2.5vl:7b`.
-- `--subtractor` (str): Background subtractor algorithm. Options: `MOG2`, `KNN`. Default: `KNN`.
-- `--server` (str): VLM server URL. Default: `http://localhost:11434`.
-- `--motion` (float): Motion sensitivity threshold. Default: `0.3`.
-- `--frame-delay` (int): Frame interval between analysis passes. Default: `1`.
-- `--source` (int): Video source: `0` = webcam, `1` = screen capture. Default: `0`.
+## CLI arguments (web_server.py)
 
-## Usage Examples
+| Argument | Default | Description |
+|---|---|---|
+| `--mode` | `detector` | `detector` or `analyzer` |
+| `--source` | `0` | `0` = camera, `1` = screen capture |
+| `--vlm` | `qwen2.5vl:7b` | Ollama model name |
+| `--detection-model` | `FastSAM-s.pt` | Path to weights file in `models/` |
+| `--server` | `http://localhost:11434` | Ollama server URL |
+| `--confidence` | `0.3` | Detection confidence threshold |
+| `--label-workers` | `1` | Parallel VLM labeling threads |
+| `--port` | `5000` | Port for the Flask server |
 
-### Object Detection Mode
-Run with defaults (webcam, local Ollama, YOLO `yolo11n.pt`):
+Examples:
+
+```
+# Analyzer mode with a faster model
+python web_server.py --mode analyzer --vlm moondream:latest
+
+# Detector mode with parallel labeling (set OLLAMA_NUM_PARALLEL to match)
+OLLAMA_NUM_PARALLEL=2 python web_server.py --label-workers 2
+
+# Screen capture source
+python web_server.py --source 1
+```
+
+---
+
+## Standalone CLI scripts
+
+The detector and analyzer can be run independently without the web server, for scripting or testing:
+
 ```
 python object_detector.py
-```
-
-Enable censoring and use screen capture:
-```
-python object_detector.py --censor True --source 1
-```
-
-Use a different VLM and model weights:
-```
-python object_detector.py --vlm llava:13b --detection-model face/last.pt
-```
-
-### Motion Analysis Mode
-Run with defaults (webcam, KNN subtractor, qwen2.5vl:7b):
-```
 python analyzer.py
 ```
 
-Use MOG2 background subtractor with higher motion sensitivity:
+Both accept similar arguments (`--vlm`, `--server`, `--confidence`, `--source`). Run with `--help` to see options.
+
+---
+
+## Optional: Electron overlay (screen mode)
+
+When using screen capture as the source, the browser window itself will be captured, creating an infinite mirror loop. The optional Electron overlay solves this by floating the annotated feed and scene caption in a separate window that is excluded from screen recording via macOS `setContentProtection`.
+
+Setup:
+
 ```
-python analyzer.py --subtractor MOG2 --motion 0.5
+cd overlay
+npm install
+npm start
 ```
 
-Use screen capture with different VLM:
+The overlay reads the MJPEG stream from the running Flask server. Start `web_server.py --source 1` first, then launch the overlay.
+
+---
+
+## Performance
+
+| Mode | Display FPS | VLM cadence |
+|---|---|---|
+| Detector | ~15-30 FPS | Once per object (async, background) |
+| Analyzer | ~15-30 FPS | On motion detection (~5-30s per analysis) |
+
+Using `moondream:latest` reduces analyzer latency to ~2-5s. For detector mode with many objects, `--label-workers 2` with `OLLAMA_NUM_PARALLEL=2` enables parallel labeling.
+
+---
+
+## Project structure
+
 ```
-python analyzer.py --source 1 --vlm llava:7b
+web_server.py        # Flask server + dashboard backend
+object_detector.py   # RealTimeDetector (FastSAM/YOLO + VLM labeling)
+analyzer.py          # RealTimeLabeler (motion detection + scene VLM)
+templates/
+  dashboard.html     # Single-page dashboard UI
+overlay/
+  main.js            # Electron main process
+  index.html         # Overlay window (stream + caption)
+  package.json
+models/              # Detection model weights (gitignored)
+requirements.txt
 ```
-
-## Performance Comparison
-
-| Mode | FPS | Use Case | Resource Usage |
-|------|-----|----------|----------------|
-| Object Detection | ~0.3-0.5 | Precise object identification | High (YOLO + VLM) |
-| Motion Analysis | ~15-30 | Scene understanding | Low (Motion detection + VLM) |
-
-## Motion Detection Details
-
-The motion analysis mode uses three complementary detection methods:
-
-### 1. Background Subtraction
-- **MOG2**: Mixture of Gaussians, adaptive to lighting changes
-- **KNN**: K-Nearest Neighbors, better for complex backgrounds
-- **Purpose**: Detects new objects appearing in frame
-
-### 2. Frame Difference
-- Compares consecutive frames pixel-by-pixel
-- **Purpose**: Detects immediate movements and gestures
-- **Threshold**: Uses half the motion area threshold for higher sensitivity
-
-### 3. Structural Similarity
-- Compares frames over longer time periods using template matching
-- **Purpose**: Detects overall scene changes and camera movement
-- **Threshold**: Default 0.9 (90% similarity required to avoid analysis)
-
-### Motion Detection Parameters
-- `motion_area_threshold`: Minimum contour area to trigger analysis (default: 5000 pixels)
-- `ssim_threshold`: Structural similarity threshold (default: 0.9)
-- `buffer_size`: Number of frames to keep for comparison (default: 10)
-
-## Notes
-- Ensure your VLM supports image inputs via Ollama's `/api/generate` with `images` payloads
-- Object detection mode will automatically download YOLO weights if not present
-- Motion analysis mode is more responsive and suitable for real-time applications
-- Both modes support webcam and screen capture sources
-- Asynchronous processing ensures smooth video streams during VLM analysis

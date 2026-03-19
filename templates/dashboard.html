@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiveLabel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,300&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0a;
+      --surface:   #111111;
+      --border:    rgba(255,255,255,0.07);
+      --border-hi: rgba(255,255,255,0.13);
+      --text:      #efefef;
+      --text-dim:  #464646;
+      --text-mid:  #888888;
+      --accent:    #7afcb8;
+      --font:      'IBM Plex Mono', monospace;
+      --ease:      160ms ease;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+
+    /* ── LAYOUT ──────────────────────────────────────────────────── */
+    .app { display: flex; height: 100vh; width: 100vw; }
+
+    /* Feed */
+    .feed { flex: 1 1 0; background: #000; border-right: 1px solid var(--border); overflow: hidden; position: relative; }
+    #stream-img { width: 100%; height: 100%; object-fit: contain; display: none; }
+    #screen-placeholder {
+      display: none; width: 100%; height: 100%;
+      align-items: center; justify-content: center; flex-direction: column; gap: 12px;
+    }
+    #screen-placeholder.visible { display: flex; }
+    .placeholder-title { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-mid); }
+    .placeholder-note  { font-size: 9px;  letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
+    .feed-badge {
+      position: absolute; top: 14px; left: 14px;
+      font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--text-dim); background: rgba(10,10,10,0.75);
+      padding: 4px 9px; border: 1px solid var(--border); pointer-events: none;
+    }
+
+    /* Sidebar */
+    .sidebar { width: 296px; flex: 0 0 296px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── HEADER ──────────────────────────────────────────────────── */
+    .app-header {
+      padding: 16px 18px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border-hi); flex-shrink: 0;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    #logo-canvas { display: block; flex-shrink: 0; }
+    .brand-name { font-size: 12px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .mode-badge { font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
+    .live-pill { display: flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+    .live-dot { width: 5px; height: 5px; background: var(--accent); animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
+
+    /* ── SCROLLABLE MIDDLE ───────────────────────────────────────── */
+    .sidebar-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+    .sidebar-scroll::-webkit-scrollbar { display: none; }
+
+    /* ── SECTION CHROME ──────────────────────────────────────────── */
+    .section { border-bottom: 1px solid var(--border); }
+    .sec-hdr { padding: 14px 18px 0; display: flex; align-items: baseline; justify-content: space-between; }
+    .sec-lbl { font-size: 8px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); }
+    .sec-meta { font-size: 9px; letter-spacing: 0.06em; color: var(--text-dim); }
+    .sec-body { padding: 10px 18px 14px; }
+
+    /* ── SOURCE BUTTONS (Poolside style: no box) ─────────────────── */
+    .src-row { display: flex; gap: 22px; }
+
+    .src-btn {
+      position: relative; overflow: hidden;
+      background: none; border: none; outline: none;
+      color: var(--text); font-family: var(--font);
+      font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+      padding: 4px 8px; cursor: pointer; user-select: none;
+      transition: color var(--ease);
+    }
+    .src-btn span { position: relative; z-index: 1; }
+    .src-btn::before {
+      content: ''; position: absolute; inset: 0;
+      background: var(--accent);
+      clip-path: inset(0 100% 0 0);
+      transition: clip-path 200ms ease;
+    }
+    .src-btn:not(.active):hover::before { clip-path: inset(0 0 0 0); }
+    .src-btn:not(.active):hover { color: #0a0a0a; }
+    .src-btn.active::before { clip-path: inset(0 0 0 0); }
+    .src-btn.active { color: #0a0a0a; }
+    .src-btn.active:hover::before { clip-path: inset(0 100% 0 0); }
+    .src-btn.active:hover { color: var(--text); }
+
+    /* ── CONTROL ROWS (no box toggles) ──────────────────────────── */
+    .ctrl-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; cursor: pointer;
+    }
+    .ctrl-row + .ctrl-row { border-top: 1px solid var(--border); }
+    .ctrl-lbl { font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--text-mid); }
+
+    .ctrl-val {
+      position: relative; overflow: hidden;
+      padding: 2px 5px; font-size: 9px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text); user-select: none;
+      transition: color var(--ease);
+    }
+    .ctrl-val span { position: relative; z-index: 1; }
+    .ctrl-val::before {
+      content: ''; position: absolute; inset: 0;
+      background: var(--accent);
+      clip-path: inset(0 100% 0 0);
+      transition: clip-path 200ms ease;
+    }
+    .ctrl-row:hover .ctrl-val:not(.on)::before { clip-path: inset(0 0 0 0); }
+    .ctrl-row:hover .ctrl-val:not(.on) { color: #0a0a0a; }
+    .ctrl-val.on::before { clip-path: inset(0 0 0 0); }
+    .ctrl-val.on { color: #0a0a0a; }
+    .ctrl-row:hover .ctrl-val.on::before { clip-path: inset(0 100% 0 0); }
+    .ctrl-row:hover .ctrl-val.on { color: var(--text); }
+
+    /* ── CONFIDENCE ──────────────────────────────────────────────── */
+    .conf-ctrl { display: flex; align-items: center; gap: 10px; }
+    .conf-btn {
+      background: none; border: none; color: var(--text-dim);
+      font-family: var(--font); font-size: 14px; cursor: pointer;
+      transition: color var(--ease); line-height: 1; padding: 0 2px;
+    }
+    .conf-btn:hover { color: var(--text); }
+    .conf-val { font-size: 11px; color: var(--text); min-width: 32px; text-align: center; }
+
+    /* ── MODEL SELECT ────────────────────────────────────────────── */
+    .model-row { display: flex; align-items: center; padding: 10px 0; }
+    .model-row + .model-row { border-top: 1px solid var(--border); }
+    .model-lbl { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); width: 34px; flex-shrink: 0; }
+    .model-sel {
+      flex: 1; min-width: 0; background: var(--surface);
+      border: 1px solid var(--border-hi); color: var(--text);
+      font-family: var(--font); font-size: 10px; padding: 5px 7px;
+      appearance: none; cursor: pointer; outline: none;
+      transition: border-color var(--ease);
+    }
+    .model-sel:focus { border-color: rgba(255,255,255,0.25); }
+
+    /* ── SCENE ───────────────────────────────────────────────────── */
+    .summary-p {
+      font-size: 11px; font-style: italic; font-weight: 300;
+      line-height: 1.7; color: var(--text-mid);
+      transition: opacity 0.4s ease;
+    }
+    .summary-p.fading { opacity: 0.2; }
+    .motion-badge {
+      display: none; align-items: center; gap: 5px; margin-bottom: 8px;
+      font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim);
+    }
+    .motion-badge.visible { display: inline-flex; }
+    .motion-badge.active { color: var(--accent); }
+    .motion-pip { width: 5px; height: 5px; background: currentColor; }
+
+    /* ── OBJECTS ─────────────────────────────────────────────────── */
+    #objects-list { max-height: 120px; overflow-y: auto; scrollbar-width: none; }
+    #objects-list::-webkit-scrollbar { display: none; }
+    .obj-row { display: flex; align-items: center; gap: 9px; padding: 6px 18px; border-bottom: 1px solid var(--border); }
+    .obj-pip { width: 6px; height: 6px; flex-shrink: 0; }
+    .obj-name { flex: 1; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .obj-right { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+    .obj-pct { font-size: 9px; color: var(--text-dim); }
+    .obj-bar { width: 40px; height: 1px; background: var(--border-hi); position: relative; }
+    .obj-fill { position: absolute; top: 0; left: 0; height: 1px; background: var(--accent); }
+    .obj-empty { padding: 10px 18px; font-size: 10px; letter-spacing: 0.08em; color: var(--text-dim); }
+
+
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- FEED -->
+  <div class="feed">
+    <img id="stream-img" alt="live feed">
+    <div id="screen-placeholder">
+      <span class="placeholder-title">Screen Capture Active</span>
+      <span class="placeholder-note">Use the LiveLabel Overlay app to view the annotated feed</span>
+    </div>
+    <div class="feed-badge" id="feed-badge">Camera Feed</div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Header (always visible) -->
+    <div class="app-header">
+      <div class="brand">
+        <canvas id="logo-canvas" width="40" height="40"></canvas>
+        <span class="brand-name">LiveLabel</span>
+      </div>
+      <div class="header-right">
+        <span class="mode-badge" id="mode-badge">Detector</span>
+        <div class="live-pill"><div class="live-dot"></div><span>Live</span></div>
+      </div>
+    </div>
+
+    <!-- Scrollable controls -->
+    <div class="sidebar-scroll">
+
+      <!-- Source -->
+      <div class="section">
+        <div class="sec-hdr"><span class="sec-lbl">Source</span></div>
+        <div class="sec-body">
+          <div class="src-row">
+            <button class="src-btn active" id="src-camera" onclick="setSource(0)"><span>Camera</span></button>
+            <button class="src-btn" id="src-screen" onclick="setSource(1)"><span>Screen</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode -->
+      <div class="section">
+        <div class="sec-hdr"><span class="sec-lbl">Mode</span></div>
+        <div class="sec-body">
+          <div class="src-row">
+            <button class="src-btn active" id="mode-detector" onclick="switchMode('detector')"><span>Detector</span></button>
+            <button class="src-btn" id="mode-analyzer" onclick="switchMode('analyzer')"><span>Analyzer</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detection (detector mode only) -->
+      <div class="section" id="detection-section">
+        <div class="sec-hdr"><span class="sec-lbl">Detection</span></div>
+        <div class="sec-body">
+          <div class="ctrl-row" onclick="toggleCfg('show_boxes','boxes-val')">
+            <span class="ctrl-lbl">Boxes</span>
+            <span class="ctrl-val on" id="boxes-val"><span>ON</span></span>
+          </div>
+          <div class="ctrl-row" onclick="toggleCfg('show_labels','labels-val')">
+            <span class="ctrl-lbl">Labels</span>
+            <span class="ctrl-val on" id="labels-val"><span>ON</span></span>
+          </div>
+          <div class="ctrl-row" onclick="toggleCfg('show_overlays','overlays-val')">
+            <span class="ctrl-lbl">Overlays</span>
+            <span class="ctrl-val on" id="overlays-val"><span>ON</span></span>
+          </div>
+          <div class="ctrl-row" style="cursor:default">
+            <span class="ctrl-lbl">Confidence</span>
+            <div class="conf-ctrl">
+              <button class="conf-btn" onclick="adjustConf(-0.05)">−</button>
+              <span class="conf-val" id="conf-val">0.30</span>
+              <button class="conf-btn" onclick="adjustConf(+0.05)">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Models -->
+      <div class="section">
+        <div class="sec-hdr"><span class="sec-lbl">Models</span></div>
+        <div class="sec-body">
+          <div class="model-row">
+            <span class="model-lbl">VLM</span>
+            <select class="model-sel" id="vlm-select" onchange="updateVlm(this.value)"><option>qwen2.5vl:7b</option></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scene -->
+      <div class="section">
+        <div class="sec-hdr">
+          <span class="sec-lbl">Scene</span>
+          <span class="sec-meta" id="summary-age">—</span>
+        </div>
+        <div class="sec-body">
+          <div class="motion-badge" id="motion-badge"><div class="motion-pip"></div><span>Motion</span></div>
+          <p class="summary-p" id="summary-text">Analyzing scene...</p>
+        </div>
+      </div>
+
+      <!-- Objects (detector mode only) -->
+      <div class="section" id="objects-section">
+        <div class="sec-hdr">
+          <span class="sec-lbl">Objects</span>
+          <span class="sec-meta" id="obj-count">0 active</span>
+        </div>
+        <div id="objects-list"></div>
+      </div>
+
+    </div><!-- /sidebar-scroll -->
+
+  </div><!-- /sidebar -->
+</div><!-- /app -->
+
+<script>
+  // ── Frustum wireframe logo ─────────────────────────────────────────────────
+  (function() {
+    const canvas = document.getElementById("logo-canvas");
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2, cy = H / 2;
+
+    // Camera frustum: near plane (small) + far plane (large)
+    const ns = 0.36, nz = -0.55;
+    const fs = 1.0,  fz =  0.72;
+
+    const verts = [
+      [-ns, -ns, nz], [ ns, -ns, nz], [ ns,  ns, nz], [-ns,  ns, nz], // near (0-3)
+      [-fs, -fs, fz], [ fs, -fs, fz], [ fs,  fs, fz], [-fs,  fs, fz], // far  (4-7)
+    ];
+
+    const edges = [
+      [0,1],[1,2],[2,3],[3,0], // near plane
+      [4,5],[5,6],[6,7],[7,4], // far plane
+      [0,4],[1,5],[2,6],[3,7], // connecting
+    ];
+    const lensEdges = [[0,2],[1,3]]; // near-plane diagonals (lens cross)
+
+    let angle = 0;
+    const tiltX = 0.28;
+    const scale = 8.5; // reduced to prevent clipping on 40×40 canvas
+    const fov = 3.2;
+
+    function rotY(v, a) {
+      const c = Math.cos(a), s = Math.sin(a);
+      return [v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c];
+    }
+    function rotX(v, a) {
+      const c = Math.cos(a), s = Math.sin(a);
+      return [v[0], v[1]*c - v[2]*s, v[1]*s + v[2]*c];
+    }
+    function transform(v) {
+      let r = rotY(v, angle);
+      r = rotX(r, tiltX);
+      return r; // return [x, y, z] in view space
+    }
+    function proj(r) {
+      const d = fov / (fov + r[2]);
+      return [cx + r[0] * scale * d, cy + r[1] * scale * d];
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // Transform all verts, keep view-space z for hidden-edge test
+      const tv = verts.map(transform);
+      const pts = tv.map(proj);
+
+      // Separate edges into visible (avg z < 0 = closer) and hidden
+      const solidEdges = [], dashEdges = [];
+      edges.forEach(([a, b]) => {
+        const avgZ = (tv[a][2] + tv[b][2]) / 2;
+        (avgZ < 0 ? solidEdges : dashEdges).push([a, b]);
+      });
+
+      // Hidden edges — dashed, faint
+      ctx.strokeStyle = "rgba(255,255,255,0.20)";
+      ctx.lineWidth = 0.6;
+      ctx.setLineDash([1.8, 2.5]);
+      ctx.beginPath();
+      dashEdges.forEach(([a, b]) => {
+        ctx.moveTo(pts[a][0], pts[a][1]);
+        ctx.lineTo(pts[b][0], pts[b][1]);
+      });
+      ctx.stroke();
+
+      // Visible edges — solid, bright
+      ctx.strokeStyle = "rgba(255,255,255,0.62)";
+      ctx.lineWidth = 0.85;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      solidEdges.forEach(([a, b]) => {
+        ctx.moveTo(pts[a][0], pts[a][1]);
+        ctx.lineTo(pts[b][0], pts[b][1]);
+      });
+      ctx.stroke();
+
+      // Lens cross — always dashed (interior detail)
+      ctx.strokeStyle = "rgba(255,255,255,0.22)";
+      ctx.lineWidth = 0.6;
+      ctx.setLineDash([1.5, 2]);
+      ctx.beginPath();
+      lensEdges.forEach(([a, b]) => {
+        ctx.moveTo(pts[a][0], pts[a][1]);
+        ctx.lineTo(pts[b][0], pts[b][1]);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      angle += 0.006;
+      requestAnimationFrame(draw);
+    }
+    draw();
+  })();
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let cfg = { show_boxes:true, show_overlays:true, show_labels:true, confidence:0.30, vlm:"qwen2.5vl:7b", source:0, mode:"detector" };
+  let lastSummary = "", summaryTs = null;
+
+  // ── Colour per UID ─────────────────────────────────────────────────────────
+  function uidColor(uid) {
+    let h = 0;
+    for (let i = 0; i < uid.length; i++) h = ((h*31) + uid.charCodeAt(i)) >>> 0;
+    h = (h % 360) / 360;
+    const s=0.85, v=0.95, i6=Math.floor(h*6), f=h*6-i6;
+    const p=v*(1-s), q=v*(1-s*f), t=v*(1-s*(1-f));
+    let r,g,b;
+    switch(i6%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}
+    return `rgb(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)})`;
+  }
+
+  // ── Render objects ─────────────────────────────────────────────────────────
+  function renderObjects(objects) {
+    document.getElementById("obj-count").textContent = objects.length + " active";
+    const el = document.getElementById("objects-list");
+    el.textContent = "";
+    if (!objects.length) {
+      const e = document.createElement("div"); e.className="obj-empty"; e.textContent="No objects detected"; el.appendChild(e); return;
+    }
+    objects.forEach(o => {
+      const pct = Math.round(o.conf * 100);
+      const row = document.createElement("div"); row.className="obj-row";
+      const pip = document.createElement("div"); pip.className="obj-pip"; pip.style.background=uidColor(o.uid);
+      const name = document.createElement("span"); name.className="obj-name"; name.textContent=o.label;
+      const right = document.createElement("div"); right.className="obj-right";
+      const pctEl = document.createElement("span"); pctEl.className="obj-pct"; pctEl.textContent=pct+"%";
+      const bar = document.createElement("div"); bar.className="obj-bar";
+      const fill = document.createElement("div"); fill.className="obj-fill"; fill.style.width=pct+"%";
+      bar.appendChild(fill); right.appendChild(pctEl); right.appendChild(bar);
+      row.appendChild(pip); row.appendChild(name); row.appendChild(right); el.appendChild(row);
+    });
+  }
+
+  // ── Summary age ────────────────────────────────────────────────────────────
+  function tickAge() {
+    if (!summaryTs) return;
+    const s = Math.floor((Date.now()-summaryTs)/1000);
+    document.getElementById("summary-age").textContent = s<60 ? s+"s ago" : Math.floor(s/60)+"m ago";
+  }
+
+  // ── Poll ───────────────────────────────────────────────────────────────────
+  async function poll() {
+    try {
+      const r = await fetch("/api/state"); if (!r.ok) return;
+      const d = await r.json();
+      renderObjects(d.objects || []);
+      const mb = document.getElementById("motion-badge");
+      mb.classList.toggle("active", !!d.motion);
+      if (d.scene_summary && d.scene_summary !== lastSummary) {
+        const el = document.getElementById("summary-text");
+        el.classList.add("fading");
+        setTimeout(() => { el.textContent=d.scene_summary; lastSummary=d.scene_summary; summaryTs=Date.now(); el.classList.remove("fading"); }, 400);
+      }
+    } catch(_) {}
+  }
+
+  // ── Config ─────────────────────────────────────────────────────────────────
+  async function postCfg(patch) {
+    try {
+      const r = await fetch("/api/config", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(patch) });
+      if (r.ok) Object.assign(cfg, await r.json());
+    } catch(_) {}
+  }
+
+  function toggleCfg(key, valId) {
+    cfg[key] = !cfg[key];
+    const el = document.getElementById(valId);
+    el.innerHTML = `<span>${cfg[key] ? "ON" : "OFF"}</span>`;
+    el.classList.toggle("on", cfg[key]);
+    postCfg({[key]: cfg[key]});
+  }
+
+  let confTimer = null;
+  function adjustConf(delta) {
+    cfg.confidence = Math.round(Math.max(0.05, Math.min(1.0, cfg.confidence+delta))*100)/100;
+    document.getElementById("conf-val").textContent = cfg.confidence.toFixed(2);
+    clearTimeout(confTimer);
+    confTimer = setTimeout(() => postCfg({confidence: cfg.confidence}), 300);
+  }
+
+  function updateVlm(v) { cfg.vlm=v; postCfg({vlm:v}); }
+
+  function setSource(s) {
+    cfg.source = s;
+    document.getElementById("src-camera").classList.toggle("active", s===0);
+    document.getElementById("src-screen").classList.toggle("active", s===1);
+
+    const streamImg = document.getElementById("stream-img");
+    const placeholder = document.getElementById("screen-placeholder");
+    const badge = document.getElementById("feed-badge");
+
+    if (s === 1) {
+      streamImg.src = "";
+      streamImg.style.display = "none";
+      placeholder.classList.add("visible");
+      badge.textContent = "Screen Capture";
+    } else {
+      if (!streamImg.src || !streamImg.src.endsWith("/stream")) streamImg.src = "/stream";
+      streamImg.style.display = "block";
+      placeholder.classList.remove("visible");
+      badge.textContent = "Camera Feed";
+    }
+    postCfg({source: s});
+  }
+
+  function applyMode(mode) {
+    cfg.mode = mode;
+    document.getElementById("mode-badge").textContent = mode === "detector" ? "Detector" : "Analyzer";
+    document.getElementById("detection-section").style.display = mode === "detector" ? "" : "none";
+    document.getElementById("objects-section").style.display   = mode === "detector" ? "" : "none";
+    document.getElementById("mode-detector").classList.toggle("active", mode === "detector");
+    document.getElementById("mode-analyzer").classList.toggle("active", mode === "analyzer");
+    document.getElementById("motion-badge").classList.add("visible");
+  }
+
+  async function switchMode(mode) {
+    try {
+      const r = await fetch("/api/mode", { method: "POST",
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({mode}) });
+      if (r.ok) { Object.assign(cfg, await r.json()); applyMode(cfg.mode); }
+    } catch(_) {}
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const r = await fetch("/api/config"); if (!r.ok) return;
+      Object.assign(cfg, await r.json());
+
+      const setVal = (id, key) => {
+        const el = document.getElementById(id);
+        el.innerHTML = `<span>${cfg[key] ? "ON" : "OFF"}</span>`;
+        el.classList.toggle("on", cfg[key]);
+      };
+      setVal("boxes-val",    "show_boxes");
+      setVal("labels-val",   "show_labels");
+      setVal("overlays-val", "show_overlays");
+      document.getElementById("conf-val").textContent = cfg.confidence.toFixed(2);
+      document.getElementById("src-camera").classList.toggle("active", cfg.source===0);
+      document.getElementById("src-screen").classList.toggle("active", cfg.source===1);
+      setSource(cfg.source);
+      applyMode(cfg.mode);
+    } catch(_) {}
+
+    try {
+      const r = await fetch("/api/models"); if (!r.ok) return;
+      const m = await r.json();
+      const sel = document.getElementById("vlm-select");
+      if (m.vlm_models && m.vlm_models.length) {
+        sel.textContent = "";
+        m.vlm_models.forEach(v => { const o=new Option(v,v); if(v===cfg.vlm)o.selected=true; sel.add(o); });
+      }
+    } catch(_) {}
+  }
+
+  init();
+  setInterval(poll, 2000);
+  setInterval(tickAge, 5000);
+</script>
+</body>
+</html>
