@@ -1,4 +1,9 @@
+<<<<<<< HEAD
 # LiveLabel
+=======
+# LiveLabel: a Local Real-Time Computer Vision Pipeline
+A comprehensive real-time computer vision system with two main approaches: object detection with YOLO/SAM and motion-based scene analysis, both powered by local VLMs via Ollama.
+>>>>>>> bd2f5edca06516198cb437b7d547d30a554f741b
 
 Most computer vision demos either run in the cloud — introducing latency and privacy concerns — or require writing custom integration code to wire up a specific model. LiveLabel was built to answer a simpler question: *what is the camera looking at, right now, with no internet required?*
 
@@ -144,3 +149,44 @@ overlay/
 models/              # Detection model weights (gitignored)
 requirements.txt
 ```
+<<<<<<< HEAD
+=======
+
+## Performance Comparison
+
+| Mode | FPS | Use Case | Resource Usage |
+|------|-----|----------|----------------|
+| Object Detection | ~0.3-0.5 | Precise object identification | High (YOLO + VLM) |
+| Motion Analysis | ~15-30 | Scene understanding | Low (Motion detection + VLM) |
+
+## Motion Detection Details
+
+The motion analysis mode uses three complementary detection methods:
+
+### 1. Background Subtraction
+- **MOG2**: Mixture of Gaussians, adaptive to lighting changes
+- **KNN**: K-Nearest Neighbors, better for complex backgrounds
+- **Purpose**: Detects new objects appearing in frame
+
+### 2. Frame Difference
+- Compares consecutive frames pixel-by-pixel
+- **Purpose**: Detects immediate movements and gestures
+- **Threshold**: Uses half the motion area threshold for higher sensitivity
+
+### 3. Structural Similarity
+- Compares frames over longer time periods using template matching
+- **Purpose**: Detects overall scene changes and camera movement
+- **Threshold**: Default 0.9 (90% similarity required to avoid analysis)
+
+### Motion Detection Parameters
+- `motion_area_threshold`: Minimum contour area to trigger analysis (default: 5000 pixels)
+- `ssim_threshold`: Structural similarity threshold (default: 0.9)
+- `buffer_size`: Number of frames to keep for comparison (default: 10)
+
+## Notes
+- Ensure your VLM supports image inputs via Ollama's `/api/generate` with `images` payloads
+- Object detection mode will automatically download YOLO weights if not present
+- Motion analysis mode is more responsive and suitable for real-time applications
+- Both modes support webcam and screen capture sources
+- Asynchronous processing ensures smooth video streams during VLM analysis
+>>>>>>> bd2f5edca06516198cb437b7d547d30a554f741b
