@@ -1,9 +1,5 @@
-<<<<<<< HEAD
-# LiveLabel
-=======
 # LiveLabel: a Local Real-Time Computer Vision Pipeline
 A comprehensive real-time computer vision system with two main approaches: object detection with YOLO/SAM and motion-based scene analysis, both powered by local VLMs via Ollama.
->>>>>>> bd2f5edca06516198cb437b7d547d30a554f741b
 
 Most computer vision demos either run in the cloud — introducing latency and privacy concerns — or require writing custom integration code to wire up a specific model. LiveLabel was built to answer a simpler question: *what is the camera looking at, right now, with no internet required?*
 
@@ -149,15 +145,6 @@ overlay/
 models/              # Detection model weights (gitignored)
 requirements.txt
 ```
-<<<<<<< HEAD
-=======
-
-## Performance Comparison
-
-| Mode | FPS | Use Case | Resource Usage |
-|------|-----|----------|----------------|
-| Object Detection | ~0.3-0.5 | Precise object identification | High (YOLO + VLM) |
-| Motion Analysis | ~15-30 | Scene understanding | Low (Motion detection + VLM) |
 
 ## Motion Detection Details
 
@@ -189,4 +176,3 @@ The motion analysis mode uses three complementary detection methods:
 - Motion analysis mode is more responsive and suitable for real-time applications
 - Both modes support webcam and screen capture sources
 - Asynchronous processing ensures smooth video streams during VLM analysis
->>>>>>> bd2f5edca06516198cb437b7d547d30a554f741b
